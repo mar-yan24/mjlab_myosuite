@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = "==3.11.*"
 dependencies = [
   "mjlab",
-  "mujoco>=3.2",
+  "mujoco>=3.7.0",
   "torch",
   "rsl-rl-lib",
   "pytest>=9.0.2",
@@ -32,19 +32,12 @@ dev = [
 override-dependencies = [
   "h5py>=3.12.0",
   "cloudpickle>=3.0.0",
-  # Pin to 3.4.x so MjData layout matches mujoco-warp (3.5.x changed flexedge fields).
-  "mujoco>=3.4.0,<3.5",
+  # Track mjlab, which requires mujoco>=3.7.0 and mujoco-warp>=3.7.0.1.
+  "mujoco>=3.7.0",
 ]
-
-[[tool.uv.index]]
-name = "mujoco"
-url = "https://py.mujoco.org"
-explicit = true
 
 [tool.uv.sources]
 myosuite = { git = "https://github.com/MyoHub/myosuite.git", rev = "mjx" }
-# Resolve mujoco from py.mujoco.org so version matches mujoco-warp (avoids flexedge_J_rownnz ABI error).
-mujoco = { index = "mujoco" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/myosuite_mjlab"]
