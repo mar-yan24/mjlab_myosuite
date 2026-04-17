@@ -9,7 +9,13 @@ description = "Minimal MyoSuite task integration package for mjlab"
 readme = "README.md"
 requires-python = "==3.11.*"
 dependencies = [
-  "mjlab",
+  # Pinned to 1.1.1: later mjlab releases broke two APIs the hand-port code
+  # depends on: 1.2.0 moved init_noise_std/noise_std_type/stochastic out of
+  # RslRlModelCfg into a distribution_cfg dict; 1.3.0 additionally removed
+  # XmlMuscleActuatorCfg from mjlab.actuator (now split into XmlActuatorCfg
+  # and BuiltinMuscleActuatorCfg). Bumping requires migrating both rl_cfg.py
+  # and robot_cfg.py across every task — hold here until that work is scoped.
+  "mjlab==1.1.1",
   "mujoco>=3.7.0",
   "torch",
   "rsl-rl-lib",

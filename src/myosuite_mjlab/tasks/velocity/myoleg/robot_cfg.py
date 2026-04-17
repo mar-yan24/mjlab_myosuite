@@ -56,6 +56,13 @@ def get_myoleg_spec() -> mujoco.MjSpec:
     # Force SPARSE Jacobian to trigger the correct branch in mujoco_warp/mjlab
     # This avoids a reshape ValueError for models with many tendons.
     spec.option.jacobian = mujoco.mjtJacobian.mjJAC_SPARSE
+    # myolegs_mjlab.xml ships 4 keyframes ("init_state" + 3 unnamed). mjlab's
+    # Scene._add_entities uses only the first and deletes it before attach,
+    # but the remaining unnamed keyframes all get prefixed to "robot/" on
+    # attach, triggering "repeated name 'robot/' in key" at compile. Keep
+    # only the first to match mjlab's single-keyframe contract.
+    while len(spec.keys) > 1:
+        spec.delete(spec.keys[-1])
     return spec
 
 
@@ -75,10 +82,36 @@ MYOLEG_COLLISION = CollisionCfg(
     condim=3,
 )
 
+def _joint_pos_from_keyframe() -> dict[str, float]:
+    """Extract non-root joint positions from the MyoLeg XML's first keyframe.
+
+    Passing an explicit ``joint_pos`` dict forces mjlab's Entity init down the
+    ``resolve_expr`` path (float32 tensors) instead of the keyframe path
+    (``torch.tensor(mj_model.key('init_state').qpos, ...)``, which inherits
+    numpy's float64 and later fails a dtype check in
+    ``write_joint_state_to_sim`` during reset events).
+
+    The XML's keyframes are unnamed; mjlab's ``Entity.build`` later renames
+    the first to ``init_state``. We read it here by index before that happens.
+    """
+    spec = get_myoleg_spec()
+    if not spec.keys:
+        return {}
+    model = spec.compile()
+    qpos = model.key(0).qpos
+    pos: dict[str, float] = {}
+    for i in range(model.njnt):
+        joint = model.joint(i)
+        if joint.type[0] == mujoco.mjtJoint.mjJNT_FREE:
+            continue
+        pos[joint.name] = float(qpos[model.jnt_qposadr[i]])
+    return pos
+
+
 MYOLEG_INIT_STATE = EntityCfg.InitialStateCfg(
     pos=(0.0, 0.0, 0.92),
     rot=(1.0, 0.0, 0.0, 0.0),
-    joint_pos=None,
+    joint_pos=_joint_pos_from_keyframe(),
     joint_vel={".*": 0.0},
 )
 

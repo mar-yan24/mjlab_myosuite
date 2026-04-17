@@ -64,8 +64,7 @@ def test_balance_learning_smoke() -> None:
     task_id = "MjlabMyoSuite-Balance-Flat-MyoLegsTorso"
 
     env_cfg = load_env_cfg(task_id)
-    env_cfg.num_envs = 4
-    env_cfg.device = "cpu"
+    env_cfg.scene.num_envs = 4
 
     rl_cfg = load_rl_cfg(task_id)
 
@@ -79,7 +78,8 @@ def test_balance_learning_smoke() -> None:
     runner.learn(num_learning_iterations=2, init_at_random_ep_len=True)
 
     obs, _ = vec_env.reset()
-    assert obs.shape[0] == 4, f"Expected 4 envs, got {obs.shape[0]}"
-    assert torch.all(torch.isfinite(obs)), "NaN/Inf detected in observations"
+    leaf = next(iter(obs.values()))
+    assert leaf.shape[0] == 4, f"Expected 4 envs, got {leaf.shape[0]}"
+    assert torch.all(torch.isfinite(leaf)), "NaN/Inf detected in observations"
 
     vec_env.close()

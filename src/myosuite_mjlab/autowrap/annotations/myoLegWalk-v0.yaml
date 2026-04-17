@@ -1,0 +1,78 @@
+# Autowrap annotation for MyoSuite's myoLegWalk-v0.
+#
+# Values are extracted verbatim from the manual port in
+# src/myosuite_mjlab/tasks/velocity/myoleg/env_cfgs.py so the autowrap
+# parity test can diff the two side-by-side.
+mjlab_base: velocity
+myosuite_task_id: myoLegWalk-v0
+mjlab_task_id: MjlabMyoSuite-Auto-MyoLegWalk
+robot_cfg_factory: myosuite_mjlab.tasks.velocity.myoleg.robot_cfg:get_myoleg_robot_cfg
+
+action:
+  type: tendon_effort
+  actuator_names: ['.*_tendon']
+  scale: 1.0
+
+# Drop the translation/rotation freejoint DoFs and the myo Abs_t/Abs_r helpers
+# from the posture reward (they are not actuated by the leg tendons).
+joint_filter_regex: '^(?!.*(translation|rotation[2-3]|beta|Abs_t|Abs_r)).*'
+episode_length_s: 10.0
+
+foot_site_names: ['l_foot_touch', 'r_foot_touch']
+foot_contact_pattern: '^(calcn_l|calcn_r)$'
+
+rewards:
+  track_linear_velocity:
+    weight: 3.0
+    params: { std: 0.5 }
+  track_angular_velocity:
+    weight: 2.0
+    params: { std: 0.5 }
+  upright:
+    weight: 5.0
+  pose:
+    weight: 2.0
+    params:
+      std_standing: { '.*': 0.05 }
+      std_walking:  { '.*': 0.2 }
+      std_running:  { '.*': 0.4 }
+  alive:
+    weight: 10.0
+  foot_clearance:     { weight: 2.0 }
+  foot_swing_height:  { weight: 2.0 }
+  foot_slip:          { weight: 2.0 }
+  soft_landing:       { weight: 0.002 }
+  action_rate_l2:     { weight: -0.01 }
+  body_ang_vel:       { weight: -0.05 }
+  angular_momentum:   { weight: 0.0 }
+
+extra_rewards:
+  cyclic_hip:
+    translator: walk_v0.cyclic_hip
+    weight: -0.5
+    params:
+      hip_period: 100
+      amplitude: 0.8
+      joint_names: [hip_flexion_l, hip_flexion_r]
+
+terminations:
+  fell_over:
+    kind: fell_over
+    params: { limit_angle: 1.0 }
+  base_height:
+    kind: root_height_below_minimum
+    params: { minimum_height: 0.8 }
+
+obs_drop: [height_scan]
+obs_add:
+  tendon_length:   { func: 'myosuite_mjlab.mdp:tendon_length' }
+  tendon_velocity: { func: 'myosuite_mjlab.mdp:tendon_velocity' }
+  actuator_force:  { func: 'myosuite_mjlab.mdp:actuator_force' }
+  com_pos:         { func: 'myosuite_mjlab.mdp:com_pos_w' }
+  com_lin_vel:     { func: 'myosuite_mjlab.mdp:com_lin_vel_w' }
+
+command_ranges:
+  lin_vel_x: [-1.0, 1.0]
+  lin_vel_y: [-0.5, 0.5]
+
+strict_unknown_rewards: true

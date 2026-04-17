@@ -166,12 +166,26 @@ MYOLEGSTORSO_COLLISION = CollisionCfg(
     condim=3,
 )
 
-INIT_STATE = EntityCfg.InitialStateCfg(
-    pos=(0.0, 0.0, 0.92),
-    rot=(1.0, 0.0, 0.0, 0.0),
-    joint_pos=None,  # use keyframe
-    joint_vel={".*": 0.0},
-)
+def _joint_pos_from_keyframe() -> dict[str, float]:
+    """Extract non-root joint positions from the MyoLegTorso XML keyframe.
+
+    Passing an explicit ``joint_pos`` dict forces mjlab's Entity init down the
+    ``resolve_expr`` path (float32 tensors) instead of the keyframe path
+    (``torch.tensor(mj_model.key(...).qpos, ...)``, which inherits numpy's
+    float64 and later fails a dtype check in ``write_joint_state_to_sim``).
+    """
+    spec = get_myolegtorso_spec()
+    if not spec.keys:
+        return {}
+    model = spec.compile()
+    qpos = model.key(0).qpos
+    pos: dict[str, float] = {}
+    for i in range(model.njnt):
+        joint = model.joint(i)
+        if joint.type[0] == mujoco.mjtJoint.mjJNT_FREE:
+            continue
+        pos[joint.name] = float(qpos[model.jnt_qposadr[i]])
+    return pos
 
 
 def get_myolegtorso_robot_cfg() -> EntityCfg:
@@ -179,6 +193,11 @@ def get_myolegtorso_robot_cfg() -> EntityCfg:
     return EntityCfg(
         spec_fn=get_myolegtorso_spec,
         articulation=MYOLEGSTORSO_ARTICULATION,
-        init_state=INIT_STATE,
+        init_state=EntityCfg.InitialStateCfg(
+            pos=(0.0, 0.0, 0.92),
+            rot=(1.0, 0.0, 0.0, 0.0),
+            joint_pos=_joint_pos_from_keyframe(),
+            joint_vel={".*": 0.0},
+        ),
         collisions=(MYOLEGSTORSO_COLLISION,),
     )
