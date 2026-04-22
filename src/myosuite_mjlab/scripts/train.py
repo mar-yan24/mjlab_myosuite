@@ -16,16 +16,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-# Set OpenGL backend before any import that loads mujoco.
-if not os.environ.get("MUJOCO_GL"):
+# Set OpenGL backend before any import that loads mujoco. "egl" is a Linux-
+# only headless backend; forcing it on Windows/macOS makes mujoco 3.7+ raise
+# ``RuntimeError: invalid value for environment variable MUJOCO_GL`` on import.
+if sys.platform == "linux" and not os.environ.get("MUJOCO_GL"):
     os.environ["MUJOCO_GL"] = "egl"
-if not os.environ.get("MUJOCO_EGL_DEVICE_ID"):
+if sys.platform == "linux" and not os.environ.get("MUJOCO_EGL_DEVICE_ID"):
     os.environ["MUJOCO_EGL_DEVICE_ID"] = "0"
 
 import myosuite_mjlab.tasks  # noqa: F401  # register tasks before list_tasks
 
 from mjlab.envs import ManagerBasedRlEnv, ManagerBasedRlEnvCfg
-from mjlab.managers.curriculum_manager import resolve_curriculum_iterations
+try:
+    from mjlab.managers.curriculum_manager import resolve_curriculum_iterations
+except ImportError:
+    # mjlab 1.1.1 (the branch's pin) does not expose this helper; later versions
+    # add it to rescale curriculum step counts by num_steps_per_env. On 1.1.1
+    # the curriculum term iteration fields are already in env-steps so we
+    # simply no-op here.
+    def resolve_curriculum_iterations(curriculum_cfg, num_steps_per_env):  # type: ignore[no-redef]
+        return
 from mjlab.rl import MjlabOnPolicyRunner, RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.utils.gpu import select_gpus
@@ -111,7 +121,9 @@ def _run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
             pass
 
     vec_env = RslRlVecEnvWrapper(env, clip_actions=cfg.agent.clip_actions)
-    vec_env = RslRlStepAdapter(vec_env)
+    # RslRlStepAdapter is left out of the hot path: the currently-pinned
+    # rsl-rl-lib and RslRlVecEnvWrapper both use the 4-tuple step API, and
+    # wrapping here observationally hangs rsl_rl's runner on Windows.
 
     agent_cfg = asdict(cfg.agent)
     adapt_agent_cfg_for_rsl_rl(agent_cfg)

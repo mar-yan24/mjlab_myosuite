@@ -17,6 +17,47 @@ from mjlab.utils.spec_config import CollisionCfg
 _SPEC_CACHE: mujoco.MjSpec | None = None
 
 
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Link ``src`` into ``dst`` without requiring admin privileges on Windows.
+
+    Tries symlink first. On Windows ``os.symlink`` fails with WinError 1314
+    unless the user has Developer Mode enabled, so on failure we fall back to:
+      * directory junction (``mklink /J``) — no admin needed, zero-cost
+      * hardlink (``os.link``) for files — no admin needed
+      * copy as a last resort
+    """
+    import os
+    import subprocess
+    import sys
+
+    try:
+        if src.is_dir():
+            dst.symlink_to(src, target_is_directory=True)
+        else:
+            dst.symlink_to(src)
+        return
+    except OSError:
+        pass
+
+    if src.is_dir():
+        if sys.platform == "win32":
+            try:
+                subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(dst), str(src)],
+                    check=True,
+                    capture_output=True,
+                )
+                return
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+        shutil.copytree(src, dst)
+    else:
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
+
+
 def _myosuite_myo_sim() -> Path:
     """Return myo_sim root.
 
@@ -118,7 +159,7 @@ def get_myolegtorso_spec() -> mujoco.MjSpec:
                 )
                 (tmp_leg / "assets").mkdir()
                 for f in leg_assets.iterdir():
-                    (tmp_leg / "assets" / f.name).symlink_to(f)
+                    _link_or_copy(f, tmp_leg / "assets" / f.name)
                 shutil.copy(
                     our_dir / "assets" / "mjlab_bootstrap.xml",
                     tmp_leg / "assets" / "mjlab_bootstrap.xml",
@@ -127,17 +168,25 @@ def get_myolegtorso_spec() -> mujoco.MjSpec:
                 # torso/head: only assets need to be reachable via "../torso/assets/..."
                 tmp_torso = tmp_myo / "torso"
                 tmp_torso.mkdir()
-                (tmp_torso / "assets").symlink_to(myo_sim / "torso" / "assets")
+                _link_or_copy(myo_sim / "torso" / "assets", tmp_torso / "assets")
                 tmp_head = tmp_myo / "head"
                 tmp_head.mkdir()
-                (tmp_head / "assets").symlink_to(myo_sim / "head" / "assets")
+                _link_or_copy(myo_sim / "head" / "assets", tmp_head / "assets")
 
                 # Some torso assets reference meshes via paths like "../meshes/..."
                 # or "myo_sim/meshes/..." relative to the torso directory.
                 if (myo_sim / "meshes").exists():
-                    (tmp_myo / "meshes").symlink_to(myo_sim / "meshes")
-                    # Make "torso/myo_sim/meshes" resolve to the same meshes directory.
-                    (tmp_torso / "myo_sim").symlink_to(tmp_myo)
+                    _link_or_copy(myo_sim / "meshes", tmp_myo / "meshes")
+                    # Make "torso/myo_sim/<subdir>" resolve to the real source
+                    # subdirs. Linking the whole tmp_myo would be recursive
+                    # (tmp_torso is inside tmp_myo), so stage each referenced
+                    # subtree from the source tree directly.
+                    (tmp_torso / "myo_sim").mkdir()
+                    _link_or_copy(myo_sim / "meshes", tmp_torso / "myo_sim" / "meshes")
+                    for sub in ("torso", "head"):
+                        src_sub = myo_sim / sub
+                        if src_sub.exists():
+                            _link_or_copy(src_sub, tmp_torso / "myo_sim" / sub)
 
                 spec = mujoco.MjSpec.from_file(str(tmp_leg / "myolegstorso_mjlab.xml"))
 

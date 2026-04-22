@@ -50,7 +50,14 @@ class MyosuiteVelocityRunner(VelocityOnPolicyRunner):
         run_name = "local"
         if logger_type == "wandb" and wandb is not None and wandb.run:
             run_name = getattr(wandb.run, "name", None) or "local"
-        metadata = get_base_metadata(self.env.unwrapped, run_name)
-        attach_metadata_to_onnx(onnx_path, metadata)
+        try:
+            metadata = get_base_metadata(self.env.unwrapped, run_name)
+            attach_metadata_to_onnx(onnx_path, metadata)
+        except (KeyError, AssertionError):
+            # get_base_metadata hard-codes a "joint_pos" action term used by
+            # position-control robots. MyoSuite envs actuate via tendon effort /
+            # synergies, so that key isn't present -- skip metadata rather than
+            # crash the whole save().
+            pass
         if logger_type == "wandb" and wandb is not None:
             wandb.save(policy_path + filename, base_path=os.path.dirname(policy_path))

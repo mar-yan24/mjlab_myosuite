@@ -1,8 +1,9 @@
-"""VecEnv wrapper that guarantees step() returns 5 values for rsl_rl>=4.
+"""VecEnv wrapper that reconciles step() arity between mjlab and rsl_rl.
 
-Public mjlab's RslRlVecEnvWrapper may return 4 values (obs, rew, dones, extras).
-rsl_rl expects (obs, rewards, dones, infos, extras). This adapter inserts
-empty infos when the underlying env returns 4 values.
+mjlab's ``RslRlVecEnvWrapper`` and current rsl-rl-lib both use the 4-tuple
+``(obs, rewards, dones, extras)``. A future rsl_rl may return 5. This adapter
+forwards whatever the underlying env returns so either side can evolve without
+breaking the other.
 """
 
 from __future__ import annotations
@@ -32,6 +33,12 @@ class RslRlStepAdapter(VecEnv):
         return out
 
     @property
+    def cfg(self):  # type: ignore[no-any-return]
+        """Pass the underlying env's cfg through so rsl_rl's OnPolicyRunner can
+        read it (rsl_rl >=4 reads ``env.cfg`` during __init__)."""
+        return getattr(self.env, "cfg", None)
+
+    @property
     def observation_space(self):  # type: ignore[no-any-return]
         return self.env.observation_space
 
@@ -55,20 +62,9 @@ class RslRlStepAdapter(VecEnv):
 
     def step(  # type: ignore[override]
         self, actions: torch.Tensor
-    ) -> tuple[TensorDict, torch.Tensor, torch.Tensor, dict, dict]:
-        raw = self.env.step(actions)  # type: ignore[union-attr]
-        result = cast("tuple[Any, ...]", raw)
-        if len(result) == 4:
-            obs, rew, dones, extras = result
-            return obs, rew, dones, {}, extras
-        obs, rew, dones, infos, extras = (
-            result[0],
-            result[1],
-            result[2],
-            result[3],
-            result[4],
-        )
-        return obs, rew, dones, infos, extras
+    ) -> tuple[Any, ...]:
+        """Pass the underlying env's step return through unchanged."""
+        return cast("tuple[Any, ...]", self.env.step(actions))  # type: ignore[union-attr]
 
     def seed(self, seed: int = -1) -> int:
         return self.env.seed(seed)  # type: ignore[union-attr]
