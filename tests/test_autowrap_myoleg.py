@@ -18,7 +18,6 @@ install-broken environments that come up around the ``mujoco`` pin.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import pytest
@@ -59,10 +58,7 @@ def _reward_signature(term: Any) -> tuple[str, float, tuple]:
 
 
 def test_autowrap_loadable() -> None:
-    """Registering via the feature flag surfaces the task in the mjlab registry."""
-    os.environ["MYOSUITE_MJLAB_ENABLE_AUTOWRAP"] = "1"
-
-    # Import lazily so the env flag takes effect on the first side-effectful import.
+    """Registering surfaces the task in the mjlab registry."""
     try:
         from myosuite_mjlab.tasks._autowrap import register_all_autowrapped
     except ImportError as exc:  # pragma: no cover
@@ -165,7 +161,6 @@ def test_autowrap_ppo_smoke() -> None:
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import RslRlVecEnvWrapper
 
-    os.environ["MYOSUITE_MJLAB_ENABLE_AUTOWRAP"] = "1"
     try:
         from myosuite_mjlab.tasks._autowrap import register_all_autowrapped
     except ImportError as exc:  # pragma: no cover

@@ -1,16 +1,17 @@
-"""Autowrap-based task registration (opt-in, explicit).
+"""Autowrap-based task registration.
 
-Call :func:`register_all_autowrapped` from a script's ``if __name__ == "__main__"``
-block (or from inside a test function) to register every annotation YAML under
-``myosuite_mjlab/autowrap/annotations/`` as an ``MjlabMyoSuite-Auto-*`` task.
+Two entry points:
 
-Registration is **not** triggered on module import. On Windows, the
-``introspect()`` subprocess relies on ``multiprocessing.get_context("spawn")``,
-which calls ``_check_not_importing_main()`` in the parent and refuses to start
-a child if the ``.start()`` call is inside a module that is currently being
-imported. Doing the registration at import time therefore crashes pytest and
-any other importer on Windows. Explicit invocation avoids the whole class of
-problem.
+- :func:`register_all_autowrapped` — explicit call that iterates every
+  annotation YAML under ``myosuite_mjlab/autowrap/annotations/`` and registers
+  an ``MjlabMyoSuite-Auto-*`` task for each one. Raises on introspection
+  failure, so tests use this form.
+- :func:`_register_on_import` — wraps the above in a try/except and is called
+  from ``myosuite_mjlab.tasks.__init__``. Cache hits make the import path a
+  pure file read (no subprocess), which is safe on Windows where spawn
+  refuses to start a child during module import. On a missing cache /
+  subprocess failure we log a warning and return ``[]`` rather than breaking
+  the non-autowrap tasks.
 """
 
 from __future__ import annotations
@@ -45,8 +46,10 @@ def _annotation_ids() -> list[str]:
 def register_all_autowrapped() -> list[str]:
     """Register every annotation YAML. Returns the list of registered task ids.
 
-    Must be called from an ``if __name__ == "__main__"`` block or equivalent
-    guarded context on Windows — ``introspect()`` spawns a subprocess.
+    Relies on the cached introspection JSON under ``autowrap/_cache/`` when
+    present. On a cache miss this will spawn a MyoSuite subprocess, which is
+    only safe outside of module-import on Windows; see ``_register_on_import``
+    for the guarded import-time path.
     """
     registered: list[str] = []
     for task_id in _annotation_ids():
@@ -68,3 +71,22 @@ def register_all_autowrapped() -> list[str]:
         )
         registered.append(mjlab_task_id)
     return registered
+
+
+def _register_on_import() -> list[str]:
+    """Import-time wrapper around :func:`register_all_autowrapped`.
+
+    Catches the expected failure modes (missing cache, failed/slow MyoSuite
+    introspection) and logs a warning so that a broken autowrap environment
+    does not break the non-autowrap tasks that ship alongside.
+    """
+    try:
+        return register_all_autowrapped()
+    except (FileNotFoundError, RuntimeError, TimeoutError) as exc:
+        _log.warning(
+            "autowrap: skipping auto-registration (%s: %s). Populate the cache via "
+            "`python -m myosuite_mjlab.autowrap.introspect <task_id>` to enable.",
+            type(exc).__name__,
+            exc,
+        )
+        return []
