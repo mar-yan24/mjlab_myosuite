@@ -2,7 +2,7 @@
 
 Public surface:
   - ``introspect(task_id)`` — run MyoSuite task once in a subprocess, return
-    frozen metadata (XML, action dim, obs/reward keys, horizon, init_qpos).
+    the task family (plus diagnostic task_id / xml_abspath).
   - ``load_annotation(task_id)`` — load the per-task YAML annotation.
   - ``build_env_cfg(annotation, introspection, play=False)`` — assemble the
     ManagerBasedRlEnvCfg from the annotation + registry of translated MDP
@@ -10,12 +10,11 @@ Public surface:
   - ``register_autowrapped(...)`` — register the result with mjlab.
 
 This subpackage coexists with the hand-ported tasks under
-``myosuite_mjlab/tasks/`` and is opt-in via the ``MYOSUITE_MJLAB_ENABLE_AUTOWRAP``
-env flag so default imports remain unchanged.
+``myosuite_mjlab/tasks/`` and is auto-registered at ``myosuite_mjlab.tasks``
+import time via ``tasks/_autowrap.py::_register_on_import``.
 """
 
 from myosuite_mjlab.autowrap.annotations import (
-    ActionScaleStage,
     RewardOverride,
     TaskAnnotation,
     TerminationOverride,
@@ -29,7 +28,6 @@ from myosuite_mjlab.autowrap.registry import (
 )
 
 __all__ = [
-    "ActionScaleStage",
     "IntrospectionResult",
     "RewardOverride",
     "TaskAnnotation",
