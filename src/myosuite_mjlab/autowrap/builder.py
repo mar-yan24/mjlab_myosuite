@@ -17,7 +17,6 @@ param from the YAML annotation. For each base-env field the builder either:
 
 from __future__ import annotations
 
-import logging
 import warnings
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
@@ -34,8 +33,6 @@ from myosuite_mjlab.autowrap.registry import (
 
 if TYPE_CHECKING:
     from mjlab.envs import ManagerBasedRlEnvCfg
-
-_log = logging.getLogger(__name__)
 
 
 def _make_action_term(annotation: TaskAnnotation) -> tuple[str, Any]:
@@ -180,14 +177,10 @@ def _apply_extra_rewards(
 def _apply_terminations(cfg: Any, annotation: TaskAnnotation) -> None:
     from mjlab.managers.termination_manager import TerminationTermCfg
 
+    # ``resolve_termination_func`` returns None for kinds that the base velocity
+    # cfg already ships (``fell_over``): in that case we only patch params.
+    # Otherwise we add/replace the term with a fresh TerminationTermCfg.
     for name, override in annotation.terminations.items():
-        if override.kind == "custom":
-            # User will inject the func by editing code; nothing to do here.
-            continue
-        if name in cfg.terminations and override.kind == "fell_over":
-            # fell_over ships in the base velocity cfg; only update params.
-            cfg.terminations[name].params.update(override.params)
-            continue
         func = resolve_termination_func(override.kind)
         if func is None:
             if name in cfg.terminations:
@@ -306,18 +299,6 @@ def build_env_cfg(
     robot_factory = resolve_robot_factory(annotation.robot_cfg_factory)
     cfg.scene.entities = {"robot": robot_factory()}
 
-    # XML sanity: warn on mismatch, don't fail — this is a deliberate fork
-    # point (mjlab typically uses the `_mjlab` XML variant).
-    if introspection.xml_abspath:
-        factory_xml = getattr(cfg.scene.entities["robot"], "spec_fn", None)
-        if factory_xml is not None:
-            _log.info(
-                "MyoSuite introspected XML at %s; robot factory supplies its own "
-                "spec via %s — divergence is expected for the `_mjlab` variants.",
-                introspection.xml_abspath,
-                factory_xml,
-            )
-
     _configure_sensors(cfg, annotation)
 
     action_name, action_cfg = _make_action_term(annotation)
@@ -347,21 +328,19 @@ def register_autowrapped(
 ) -> str:
     """Register the autowrapped task with ``mjlab.tasks.registry``.
 
-    Returns the registered task id. Re-registration is idempotent
-    (``ValueError`` is swallowed) so importing the autowrap entrypoint
-    multiple times is safe.
+    Returns the registered task id. Idempotent: if the task id is already in
+    the registry, we skip re-registration rather than swallowing errors.
     """
-    from mjlab.tasks.registry import register_mjlab_task
+    from mjlab.tasks.registry import list_tasks, register_mjlab_task
 
-    task_id = mjlab_task_id or annotation.default_mjlab_task_id()
-    try:
-        register_mjlab_task(
-            task_id,
-            env_cfg=build_env_cfg(annotation, introspection, play=False),
-            play_env_cfg=build_env_cfg(annotation, introspection, play=True),
-            rl_cfg=rl_cfg,
-            runner_cls=runner_cls,
-        )
-    except ValueError:
-        pass
+    task_id = mjlab_task_id or annotation.default_mjlab_task_id(introspection.task_id)
+    if task_id in list_tasks():
+        return task_id
+    register_mjlab_task(
+        task_id,
+        env_cfg=build_env_cfg(annotation, introspection, play=False),
+        play_env_cfg=build_env_cfg(annotation, introspection, play=True),
+        rl_cfg=rl_cfg,
+        runner_cls=runner_cls,
+    )
     return task_id
