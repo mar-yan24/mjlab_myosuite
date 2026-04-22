@@ -4,7 +4,6 @@
 # src/myosuite_mjlab/tasks/velocity/myoleg/env_cfgs.py so the autowrap
 # parity test can diff the two side-by-side.
 mjlab_base: velocity
-myosuite_task_id: myoLegWalk-v0
 mjlab_task_id: MjlabMyoSuite-Auto-MyoLegWalk
 robot_cfg_factory: myosuite_mjlab.tasks.velocity.myoleg.robot_cfg:get_myoleg_robot_cfg
 
